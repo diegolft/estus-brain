@@ -1,20 +1,58 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/rafael/estus-vault/backend/internal/domain"
+	"github.com/rafael/estus-vault/backend/internal/service"
 )
 
 // withMiddleware wraps every request with request-id tagging, structured
 // access logging, and panic recovery — the three things that are unsafe to
-// skip on a service that will run unattended behind an mTLS edge with no
-// human watching a terminal.
+// skip on a service that will run unattended with no human watching a
+// terminal. Authentication is not here: it applies to most of /api but not
+// all of it, so it is mounted per route group in NewRouter instead.
 func withMiddleware(next http.Handler) http.Handler {
 	return recoverPanic(logRequests(next))
+}
+
+// ctxKey is unexported so nothing outside this package can write the
+// authenticated user into a context — handlers can only read back what
+// requireSession put there.
+type ctxKey struct{}
+
+var userCtxKey ctxKey
+
+// UserFromContext returns the user requireSession authenticated for this
+// request. The ok result is false on any route that isn't behind the
+// middleware, so handlers must check it rather than assume a zero User means
+// anything meaningful.
+func UserFromContext(ctx context.Context) (domain.User, bool) {
+	u, ok := ctx.Value(userCtxKey).(domain.User)
+	return u, ok
+}
+
+// requireSession rejects any request without a live session token. Absent,
+// malformed and expired tokens all produce the same bare 401: the client's
+// only correct reaction to each is to send the user back to the login
+// screen, so distinguishing them would only tell an attacker whether a token
+// was ever real.
+func requireSession(auth *service.AuthService, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, err := auth.UserFromToken(r.Context(), bearerToken(r))
+		if err != nil {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="estus-brain"`)
+			writeUnauthorized(w, errors.New("authentication required"))
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userCtxKey, user)))
+	})
 }
 
 func recoverPanic(next http.Handler) http.Handler {

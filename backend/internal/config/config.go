@@ -1,7 +1,8 @@
-// Package config loads runtime configuration from the environment. Estus
-// Vault has no login flow — access is gated at the network edge by mutual
-// TLS — so the only secrets the process needs are the database connection
-// string and the port to listen on.
+// Package config loads runtime configuration from the environment. Access is
+// gated by an in-app email/password login, which replaced the mutual-TLS edge
+// that used to front the deployment: the certificate protected everything
+// indiscriminately and could not tell the app who was calling, which the
+// vault's reveal gate needs to know.
 package config
 
 import (
@@ -29,6 +30,12 @@ type Config struct {
 	MultiUser bool
 	// TelegramBotToken is used when no token was saved on the settings screen.
 	TelegramBotToken string
+	// AdminEmail and AdminPassword seed the first account on a fresh
+	// database. They are read on every boot but only ever act when the users
+	// table is empty, so leaving them set on a running install is inert
+	// rather than a standing back door.
+	AdminEmail    string
+	AdminPassword string
 }
 
 func Load() (Config, error) {
@@ -41,6 +48,8 @@ func Load() (Config, error) {
 		Timezone:         getEnv("ASSISTANT_TZ", "America/Sao_Paulo"),
 		MultiUser:        os.Getenv("ASSISTANT_MULTI_USER") == "true",
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
+		AdminEmail:       os.Getenv("ESTUS_ADMIN_EMAIL"),
+		AdminPassword:    os.Getenv("ESTUS_ADMIN_PASSWORD"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

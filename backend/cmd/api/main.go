@@ -50,6 +50,26 @@ func run() error {
 		return err
 	}
 
+	// Auth must come up before anything that depends on a session. The
+	// bootstrap account is what keeps a fresh deployment from being locked
+	// out of an app that now demands a login.
+	userRepo := postgres.NewUserRepo(db)
+	sessionRepo := postgres.NewSessionRepo(db)
+	authService := service.NewAuthService(userRepo, sessionRepo)
+	if err := authService.EnsureBootstrapUser(ctx, cfg.AdminEmail, cfg.AdminPassword); err != nil {
+		return fmt.Errorf("bootstrap user: %w", err)
+	}
+	authHandlers := httpapi.NewAuthHandlers(authService)
+
+	// Expired sessions are already ignored by every lookup, so this sweep is
+	// housekeeping rather than a security control — a failure is worth a log
+	// line and nothing more.
+	if n, err := authService.SweepExpiredSessions(ctx); err != nil {
+		slog.Warn("expired session sweep failed", "error", err)
+	} else if n > 0 {
+		slog.Info("expired sessions removed", "count", n)
+	}
+
 	categoryRepo := postgres.NewCategoryRepo(db)
 	cardRepo := postgres.NewCreditCardRepo(db)
 	transactionRepo := postgres.NewTransactionRepo(db)
@@ -107,15 +127,15 @@ func run() error {
 	// The vault module needs VAULT_ENCRYPTION_KEY to exist at all — treat its
 	// absence as "module disabled" rather than a fatal boot error, so the
 	// rest of the app still comes up on a fresh checkout before it's
-	// configured. Access control for /senhas isn't app-level: it's the mTLS
-	// edge in front of the whole deployment.
+	// configured. Access to /senhas is now the app's own session, and Reveal
+	// re-confirms the account password on top of it.
 	var vaultHandlers *httpapi.VaultHandlers
 	vaultRepo := postgres.NewVaultRepo(db)
 	vaultService, vaultErr := service.NewVaultService(vaultRepo)
 	if vaultErr != nil {
 		slog.Warn("vault module disabled: set VAULT_ENCRYPTION_KEY to enable /senhas", "vault_error", vaultErr)
 	} else {
-		vaultHandlers = httpapi.NewVaultHandlers(vaultService)
+		vaultHandlers = httpapi.NewVaultHandlers(vaultService, authService)
 	}
 
 	// The assistant: every action as a tool, shared by the chat, MCP and the
@@ -190,7 +210,27 @@ func run() error {
 		telegramBot.Run(ctx)
 	}()
 
+	// Keep the sessions table from accumulating dead rows on a process that
+	// stays up for months. It ends with ctx, alongside the bot.
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if n, err := authService.SweepExpiredSessions(ctx); err != nil {
+					slog.Warn("expired session sweep failed", "error", err)
+				} else if n > 0 {
+					slog.Info("expired sessions removed", "count", n)
+				}
+			}
+		}
+	}()
+
 	router := httpapi.NewRouter(handlers, httpapi.Modules{
+		Auth:      authHandlers,
 		Bills:     billHandlers,
 		Vault:     vaultHandlers,
 		Notes:     noteHandlers,

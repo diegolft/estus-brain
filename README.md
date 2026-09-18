@@ -31,9 +31,8 @@ Seu app pessoal — um cérebro com dez módulos em volta, rodando num servidor 
     lançamentos porque é sobre o que ainda vai acontecer, não sobre o que já
     aconteceu.
 - **Senhas** (`/senhas`) — um cofre de senhas criptografado (AES-256-GCM).
-  Não tem checagem extra pra revelar: a proteção é o mTLS na borda (ver
-  "Deploy com mTLS") — quem chega até o app já provou quem é com o
-  certificado.
+  Não tem checagem extra pra revelar: a proteção é o login do app — quem já
+  está autenticado revela qualquer senha do cofre.
 - **Notas** (`/notas`) — um app de escrita: cadernos na lateral, a lista no
   meio e a nota aberta à direita, com editor
   [Tiptap](https://tiptap.dev) (MIT). Títulos, listas, checklists, citações,
@@ -117,8 +116,8 @@ Para usar por fora, a tela *Motor de IA e conexões* mostra o token e os
 trechos prontos:
 - **Claude Code / Codex**: apontam direto para `/mcp` com o token.
 - **Claude Desktop** (só fala stdio): `go build -o estus-mcp ./cmd/estus-mcp`
-  em `backend/` gera um relay que repassa para o `/mcp` do app, com suporte
-  ao certificado cliente do mTLS (`ESTUS_CLIENT_CERT` / `ESTUS_CLIENT_KEY`).
+  em `backend/` gera um relay que repassa para o `/mcp` do app, autenticando
+  com o token do MCP.
 - **Claude.ai / ChatGPT na web**: os conectores chamam da nuvem deles, então
   precisam de um endereço público só para `/mcp`; por enquanto com o token
   na URL (`?token=`). Login OAuth para esses conectores ainda não existe.
@@ -142,11 +141,10 @@ não derruba os outros — o servidor simplesmente não monta aquelas rotas.
   chamadas que precisam rodar no navegador (ex.: `POST
   /api/vault/[id]/reveal`) passam por Route Handlers do Next.js que só
   repassam para o Go. O Go nunca é exposto publicamente.
-- **A app não tem login nem sessão de usuário — quem entra é quem tem o
-  certificado.** Em produção o único ponto exposto na internet é o proxy
-  Caddy (`deploy/Caddyfile`), que exige um certificado de cliente (mTLS)
-  assinado pela sua própria CA antes de sequer repassar a requisição pro
-  Next.js. Ver "Deploy com mTLS" abaixo.
+- **A app tem login e senha.** Em produção o único ponto exposto na internet
+  é o frontend Next.js, atrás do Traefik do Cubeship (que termina o TLS). O
+  Go fica só na rede interna, sem domínio público. Ver
+  [`deploy/cubeship.md`](deploy/cubeship.md).
 - **Dinheiro é inteiro, sempre.** `amount_cents bigint` no Postgres,
   `domain.Cents int64` no Go. Nenhuma soma financeira passa por `float`.
 - **A regra da fatura é uma função pura e testada:**
@@ -155,8 +153,8 @@ não derruba os outros — o servidor simplesmente não monta aquelas rotas.
   `password_ciphertext`/`password_nonce` (AES-256-GCM); a chave mestra vem
   de `VAULT_ENCRYPTION_KEY` (variável de ambiente, nunca no banco). A rota de
   listagem nunca seleciona essas colunas — só a rota de "revelar" as
-  descriptografa, e ela pode ser chamada à vontade por quem já passou pelo
-  mTLS (não há checagem extra dentro do app).
+  descriptografa, e ela pode ser chamada à vontade por quem já fez login
+  (não há checagem extra dentro do app).
 - **Backend em camadas, um handler/serviço/repo por módulo:** `domain`
   (regras de negócio, sem I/O) → `store/postgres` (SQL explícito, sem ORM) →
   `service` (orquestra repositórios) → `httpapi` (HTTP puro, sem framework —
@@ -178,8 +176,11 @@ docker compose up -d postgres
 # 2. backend (aplica as migrations sozinho ao subir)
 cd backend
 cp .env.example .env
-# preencha pelo menos VAULT_ENCRYPTION_KEY (openssl rand -base64 32)
-# se quiser o cofre de senhas ativo; sem isso o resto do app funciona igual.
+# Defina ESTUS_ADMIN_EMAIL e ESTUS_ADMIN_PASSWORD: no primeiro boot, se o
+# banco ainda não tem nenhum usuário, elas criam o seu login. Sem elas você
+# sobe o app e não consegue entrar.
+# preencha também VAULT_ENCRYPTION_KEY (openssl rand -base64 32) se quiser o
+# cofre de senhas ativo; sem isso o resto do app funciona igual.
 export $(cat .env | xargs)
 go run ./cmd/api
 
@@ -190,12 +191,13 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000`. O seed (`backend/migrations/0002_seed.up.sql`)
-já cria as 7 categorias e um cartão.
+Abra `http://localhost:3000` e entre com o e-mail e a senha que você pôs em
+`ESTUS_ADMIN_EMAIL` / `ESTUS_ADMIN_PASSWORD`. O seed
+(`backend/migrations/0002_seed.up.sql`) já cria as 7 categorias e um cartão.
 
-Para rodar tudo containerizado: `docker compose up --build`. O serviço
-`caddy` (mTLS) fica atrás de um profile e não sobe nesse comando — ele é só
-para produção, ver "Deploy com mTLS" abaixo.
+Para rodar tudo containerizado: `docker compose up --build`. Sobem só três
+serviços — `postgres`, `backend` e `frontend` — e o `.env` da raiz (veja
+`.env.example`) alimenta as variáveis.
 
 ## App do Mac
 
@@ -232,9 +234,9 @@ Detalhes que valem saber:
   `components/`, `lib/`, `public/`, `next.config.*` ou `package.json` for
   mais novo que o último build.
 - A janela usa o **perfil padrão do Chrome**.
-- Esse fluxo é só local, sem mTLS — o Chrome fala direto com `localhost`. O
-  mTLS entra quando você expõe o app numa VPS pública; ver "Deploy com
-  mTLS".
+- Esse fluxo é só local — o Chrome fala direto com `localhost`, e o login do
+  app é o mesmo de sempre. Para expor numa VPS, ver
+  [`deploy/cubeship.md`](deploy/cubeship.md).
 - Logs em `~/Library/Logs/EstusBrain/`.
 - O `.app` guarda o caminho absoluto do repo: se mover o projeto de pasta,
   rode `scripts/make-app.sh` de novo.
@@ -295,40 +297,27 @@ com o nome exatamente como `say -v '?'` imprime — incluindo o parêntese quand
 houver, como em `Eddy (Portuguese (Brazil))`.
 Num servidor sem macOS a voz fica indisponível e o resto do app funciona normalmente.
 
-## Deploy com mTLS
+## Deploy
 
-Em produção (VPS com IP público — ex.: Contabo) o único serviço exposto na
-internet é o `caddy` do `docker-compose.yml`: ele termina o HTTPS público de
-verdade (Let's Encrypt, via `DOMAIN`) e **exige um certificado de cliente
-válido antes de repassar qualquer requisição** para o frontend. `backend` e
-`frontend` publicam suas portas só em `127.0.0.1` — inalcançáveis de fora da
-máquina mesmo que o firewall da VPS esteja aberto.
+Em produção o app sobe no **Cubeship** (PaaS na VPS), como dois apps —
+`estus-backend` e `estus-frontend` — mais um datastore Postgres. O TLS e o
+certificado Let's Encrypt ficam com o Traefik do Cubeship, então não existe
+proxy nenhum dentro do repo.
 
-**Não existe login nem sessão de usuário no app.** O certificado de cliente
-é a única credencial que existe: quem tem, entra e usa tudo (inclusive
-revelar qualquer senha do módulo Senhas, sem checagem extra); quem não tem,
-nem chega a completar a conexão HTTPS. Como funciona por dentro (CA própria,
-o que o Caddy verifica, como revogar um certificado vazado, troubleshooting)
-está em **[`deploy/mtls/README.md`](deploy/mtls/README.md)** — aqui vai só o
-passo a passo para colocar no ar:
+O passo a passo completo, com todas as variáveis de ambiente de cada app,
+está em **[`deploy/cubeship.md`](deploy/cubeship.md)**. O resumo:
 
-1. Aponte o DNS do seu domínio (ex.: `vault.seudominio.com`) para o IP da
-   VPS. Abra as portas 80 e 443 no firewall (Caddy precisa da 80 para emitir
-   o certificado via ACME).
-2. Na raiz do projeto, crie um `.env` com `DOMAIN=vault.seudominio.com` (e
-   `VAULT_ENCRYPTION_KEY` etc., se for usar esses módulos).
-3. Gere a CA e o certificado do seu Mac: `deploy/mtls/issue-client-cert.sh
-   mac`. Cria `deploy/mtls/ca/` (a CA — nunca vai pro git) e
-   `deploy/mtls/clients/mac/client.p12`.
-4. Importe o `client.p12` no Keychain do Mac (duplo clique, ou Keychain
-   Access → File → Import Items) com a senha definida no passo 3. A partir
-   daí o Safari/Chrome oferecem esse certificado sozinhos ao abrir o
-   domínio do vault.
-5. Suba tudo na VPS: `docker compose --profile mtls up -d --build`. O Caddy
-   só passa a servir o site depois de emitir o certificado Let's Encrypt
-   (leva alguns segundos na primeira vez).
-6. Outro dispositivo (iPhone etc.): `deploy/mtls/issue-client-cert.sh
-   iphone` — reaproveita a CA existente, emite mais um certificado.
+- **Só o frontend recebe domínio público** (`estus.diegosalvador.com.br`).
+  O backend fica só na rede interna, sem domínio — o frontend fala com ele
+  por `API_URL=http://estus-backend:8080`.
+- **O acesso é login e senha.** No primeiro boot, se não houver nenhum
+  usuário no banco, o backend cria o dono da instância a partir de
+  `ESTUS_ADMIN_EMAIL` e `ESTUS_ADMIN_PASSWORD`. Depois disso as duas envs
+  podem sair — elas só agem quando o banco está sem usuário. Você entra com
+  esse e-mail e essa senha na tela de login, e a sessão vale para o app
+  inteiro (inclusive revelar qualquer senha do cofre, sem checagem extra).
+- **`VAULT_ENCRYPTION_KEY`** (`openssl rand -base64 32`) precisa ser guardada
+  fora do backup do banco. Perdeu a chave, perdeu as senhas do cofre.
 
 ## Configurando a sincronização com Google Calendar
 
@@ -354,9 +343,16 @@ Para ativar:
 
 ## O que falta antes de "subir na infra"
 
-1. **mTLS na borda** — um reverse proxy (Caddy/Traefik/Nginx) validando
-   certificado de cliente na frente do Next.js. O Go nunca fica exposto
-   publicamente nesse desenho.
+1. **Multiusuário de verdade** — o login já existe (`users` + `sessions`, em
+   `migrations/0022_auth.up.sql`), mas **é single-user na prática**: nenhuma
+   tabela de dados tem `user_id`. Lançamentos, notas, hábitos, senhas do
+   cofre, documentos — tudo é global. Se você criar um segundo usuário no
+   banco, ele faz login e vê exatamente os mesmos dados do primeiro, com
+   permissão de editar e apagar. O login serve para manter estranhos de fora,
+   **não** para separar dados entre pessoas. Dar o app para outra pessoa
+   usar exige antes: `user_id` em todas as tabelas de dados, filtro por
+   usuário em todo repositório, e uma migration que atribua o acervo atual
+   ao dono.
 2. **Backups do Postgres** — agora com mais dado sensível (senhas
    criptografadas inclusas) que antes; `pg_dump` agendado + guardar
    `VAULT_ENCRYPTION_KEY` em um cofre separado do backup do banco (backup do

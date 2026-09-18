@@ -3,6 +3,7 @@ import Link from "next/link";
 import { MODULE_META, type ModuleId } from "@/lib/modules";
 import { IconBrain, IconChevronRight } from "./icons";
 import { ThemeToggle } from "./ThemeToggle";
+import { LogoutButton } from "./LogoutButton";
 import { BrainBackdrop } from "./brain/BrainBackdrop";
 
 // Modules are only ever entered from the núcleo, so there is no nav here —
@@ -39,7 +40,10 @@ export function ModuleTopBar({ module, children }: { module: ModuleId; children?
             </span>
           )}
         </div>
-        <ThemeToggle />
+        <div className="modbar-end">
+          <ThemeToggle />
+          <LogoutButton />
+        </div>
       </header>
     </>
   );

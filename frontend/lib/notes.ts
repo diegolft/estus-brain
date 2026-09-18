@@ -1,11 +1,10 @@
 import "server-only";
+import { goFetch, goJson } from "./serverFetch";
 
 // Mirrors the JSON DTOs in backend/internal/httpapi/dto_notes.go by hand,
 // same convention as the other modules. The editor saves through the route
 // handler under app/api/notes — a note with images is past the server-action
 // body limit.
-const API_URL = process.env.API_URL ?? "http://localhost:8080";
-
 export interface Note {
   id: string;
   title: string;
@@ -39,69 +38,54 @@ export interface NoteCategoryInput {
   color: string;
 }
 
-async function notesFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`estus-vault api ${path} -> ${res.status}: ${body}`);
-  }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  return res.json() as Promise<T>;
-}
-
 export function listNotes(): Promise<Note[]> {
-  return notesFetch<Note[]>("/api/notes", { cache: "no-store" });
+  return goJson<Note[]>("/api/notes", { cache: "no-store" });
 }
 
 // Resolves to null for a note that doesn't exist, so the page can move on.
 export async function getNote(id: string): Promise<Note | null> {
-  const res = await fetch(`${API_URL}/api/notes/${encodeURIComponent(id)}`, { cache: "no-store" });
+  const res = await goFetch(`/api/notes/${encodeURIComponent(id)}`, { cache: "no-store" });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`estus-vault api /api/notes/${id} -> ${res.status}: ${await res.text()}`);
   return res.json() as Promise<Note>;
 }
 
 export function createNote(input: NoteInput): Promise<Note> {
-  return notesFetch<Note>("/api/notes", {
+  return goJson<Note>("/api/notes", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function updateNote(id: string, input: NoteInput): Promise<Note> {
-  return notesFetch<Note>(`/api/notes/${id}`, {
+  return goJson<Note>(`/api/notes/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });
 }
 
 export function deleteNote(id: string): Promise<void> {
-  return notesFetch<void>(`/api/notes/${id}`, { method: "DELETE" });
+  return goJson<void>(`/api/notes/${id}`, { method: "DELETE" });
 }
 
 export function listNoteCategories(): Promise<NoteCategory[]> {
-  return notesFetch<NoteCategory[]>("/api/note-categories", { cache: "no-store" });
+  return goJson<NoteCategory[]>("/api/note-categories", { cache: "no-store" });
 }
 
 export function createNoteCategory(input: NoteCategoryInput): Promise<NoteCategory> {
-  return notesFetch<NoteCategory>("/api/note-categories", {
+  return goJson<NoteCategory>("/api/note-categories", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function updateNoteCategory(id: string, input: NoteCategoryInput): Promise<NoteCategory> {
-  return notesFetch<NoteCategory>(`/api/note-categories/${id}`, {
+  return goJson<NoteCategory>(`/api/note-categories/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });
 }
 
 export function deleteNoteCategory(id: string): Promise<unknown> {
-  return notesFetch(`/api/note-categories/${id}`, { method: "DELETE" });
+  return goJson(`/api/note-categories/${id}`, { method: "DELETE" });
 }

@@ -1,0 +1,56 @@
+/* The login screen borrows the app's own tokens — the graphite slabs from
+   globals.css, the panel and field rules from ui.css — so it is the same
+   room as everything behind it, dark by default and following the toggle's
+   saved choice like every other page. Nothing here defines a color of its
+   own; it only arranges what is already there. */
+.login-screen {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--page);
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+}
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 22px;
+}
+.login-brand .brand-mark svg {
+  width: 21px;
+  height: 21px;
+}
+.login-brand h1 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.login-lede {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+/* The brain's blue, dimmed to a glow behind the card: the same light the
+   núcleo uses, so signing in already feels like the same place. */
+.login-screen::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    60% 55% at 50% 42%,
+    color-mix(in oklab, var(--brain-glow) 14%, transparent),
+    transparent 70%
+  );
+}
+.login-card {
+  position: relative;
+  z-index: 1;
+}

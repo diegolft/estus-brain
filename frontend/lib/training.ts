@@ -1,9 +1,8 @@
 import "server-only";
+import { goJson } from "./serverFetch";
 
 // Mirrors backend/internal/httpapi/dto_training_diet.go by hand, same
 // convention as the other modules.
-
-const API_URL = process.env.API_URL ?? "http://localhost:8080";
 
 export interface Exercise {
   id?: string;
@@ -29,31 +28,18 @@ export interface Workout {
 
 export type WorkoutInput = Pick<Workout, "name" | "focus" | "days" | "notes" | "exercises">;
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`estus-vault api ${path} -> ${res.status}: ${body}`);
-  }
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
-}
-
 export function listWorkouts(): Promise<Workout[]> {
-  return apiFetch<Workout[]>("/api/workouts", { cache: "no-store" });
+  return goJson<Workout[]>("/api/workouts", { cache: "no-store" });
 }
 
 export function createWorkout(input: WorkoutInput): Promise<Workout> {
-  return apiFetch<Workout>("/api/workouts", { method: "POST", body: JSON.stringify(input) });
+  return goJson<Workout>("/api/workouts", { method: "POST", body: JSON.stringify(input) });
 }
 
 export function updateWorkout(id: string, input: WorkoutInput): Promise<Workout> {
-  return apiFetch<Workout>(`/api/workouts/${id}`, { method: "PUT", body: JSON.stringify(input) });
+  return goJson<Workout>(`/api/workouts/${id}`, { method: "PUT", body: JSON.stringify(input) });
 }
 
 export function deleteWorkout(id: string): Promise<void> {
-  return apiFetch<void>(`/api/workouts/${id}`, { method: "DELETE" });
+  return goJson<void>(`/api/workouts/${id}`, { method: "DELETE" });
 }

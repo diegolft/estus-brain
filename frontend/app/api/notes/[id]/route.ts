@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
+import { API_URL } from "@/lib/serverFetch";
+import { authHeaders } from "@/lib/session";
 
 // The editor's autosave. The browser never talks to the Go API directly, and
 // a note with pasted images is past the server-action body limit, so the save
 // is proxied here. Only what the screen needs comes back, not the document.
-const API_URL = process.env.API_URL ?? "http://localhost:8080";
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const res = await fetch(`${API_URL}/api/notes/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: await request.text(),
     cache: "no-store",
   });

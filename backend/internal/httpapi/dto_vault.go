@@ -46,6 +46,12 @@ func (r vaultEntryRequest) toInput() service.VaultEntryInput {
 	}
 }
 
+// revealRequestDTO carries the re-confirmation of the account password that
+// Reveal demands. It is the reason Reveal reads a body at all.
+type revealRequestDTO struct {
+	Password string `json:"password"`
+}
+
 // revealResponseDTO is the one and only place a plaintext password crosses
 // the API boundary — returned by Reveal.
 type revealResponseDTO struct {

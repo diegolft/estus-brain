@@ -1,0 +1,22 @@
+# Contexto de build: frontend/. Sem isto, o `COPY . .` do estágio de build
+# sobrescreve o node_modules instalado pelo `npm ci` com o da máquina do dev
+# (arquitetura possivelmente errada) e arrasta um .next obsoleto.
+node_modules
+.next
+out
+build
+
+# Gerado por scripts/copy-excalidraw-assets.mjs durante o prebuild, dentro
+# da imagem.
+public/excalidraw-assets
+
+.env
+.env.*
+.git
+.gitignore
+.DS_Store
+*.log
+npm-debug.log*
+*.tsbuildinfo
+.vercel
+coverage

@@ -1,10 +1,9 @@
 import "server-only";
+import { goJson } from "./serverFetch";
 
 // Mirrors backend/internal/httpapi/dto_bills.go by hand, same convention as
 // lib/api.ts — kept as its own file so this module never needs to touch the
 // shared types.ts / api.ts files other work is editing in parallel.
-
-const API_URL = process.env.API_URL ?? "http://localhost:8080";
 
 export interface Money {
   cents: number;
@@ -70,18 +69,6 @@ export interface PayBillInput {
   credit_card_id?: string;
 }
 
-async function billsFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`estus-vault api ${path} -> ${res.status}: ${body}`);
-  }
-  return res.json() as Promise<T>;
-}
-
 // listBills lists bills, optionally filtered by direction and scoped to a
 // single month (?month=YYYY-MM) — how the Contas screen reads a month now
 // that it has navigation. The backend materializes that month's recurring
@@ -93,30 +80,30 @@ export function listBills(direction?: BillDirection, month?: string): Promise<Bi
   if (direction) params.set("direction", direction);
   if (month) params.set("month", month);
   const query = params.toString();
-  return billsFetch<Bill[]>(`/api/bills${query ? `?${query}` : ""}`, { cache: "no-store" });
+  return goJson<Bill[]>(`/api/bills${query ? `?${query}` : ""}`, { cache: "no-store" });
 }
 
 export function getBillSummary(): Promise<BillSummary> {
-  return billsFetch<BillSummary>("/api/bills/summary", { cache: "no-store" });
+  return goJson<BillSummary>("/api/bills/summary", { cache: "no-store" });
 }
 
 // getBillsReceived is the closest thing this app has to "entradas": the
 // total of receivable bills actually marked received within that month.
 export function getBillsReceived(yearMonth: string): Promise<Money> {
-  return billsFetch<{ received: Money }>(`/api/bills/received?month=${yearMonth}`, { cache: "no-store" }).then(
+  return goJson<{ received: Money }>(`/api/bills/received?month=${yearMonth}`, { cache: "no-store" }).then(
     (r) => r.received,
   );
 }
 
 export function createBill(input: CreateBillInput): Promise<Bill> {
-  return billsFetch<Bill>("/api/bills", {
+  return goJson<Bill>("/api/bills", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function markBillPaid(id: string): Promise<Bill> {
-  return billsFetch<Bill>(`/api/bills/${id}/paid`, { method: "POST" });
+  return goJson<Bill>(`/api/bills/${id}/paid`, { method: "POST" });
 }
 
 // payBill settles a payable bill and records its expense in the same
@@ -126,34 +113,34 @@ export function markBillPaid(id: string): Promise<Bill> {
 // goes back to pending and the expense it created is deleted, also in one
 // commit.
 export function payBill(id: string, input: PayBillInput): Promise<Bill> {
-  return billsFetch<Bill>(`/api/bills/${id}/pay`, {
+  return goJson<Bill>(`/api/bills/${id}/pay`, {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function unpayBill(id: string): Promise<Bill> {
-  return billsFetch<Bill>(`/api/bills/${id}/paid`, { method: "DELETE" });
+  return goJson<Bill>(`/api/bills/${id}/paid`, { method: "DELETE" });
 }
 
 export function updateBill(id: string, input: CreateBillInput): Promise<Bill> {
-  return billsFetch<Bill>(`/api/bills/${id}`, {
+  return goJson<Bill>(`/api/bills/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });
 }
 
 export function deleteBill(id: string): Promise<void> {
-  return billsFetch<void>(`/api/bills/${id}`, { method: "DELETE" });
+  return goJson<void>(`/api/bills/${id}`, { method: "DELETE" });
 }
 
 // endSeries stops a recurring bill's series from growing new occurrences
 // (Materialize skips it), without touching any occurrence already born.
 // resumeSeries undoes it, so the next month opened picks the series back up.
 export function endSeries(id: string): Promise<Bill> {
-  return billsFetch<Bill>(`/api/bills/${id}/end-series`, { method: "POST" });
+  return goJson<Bill>(`/api/bills/${id}/end-series`, { method: "POST" });
 }
 
 export function resumeSeries(id: string): Promise<Bill> {
-  return billsFetch<Bill>(`/api/bills/${id}/end-series`, { method: "DELETE" });
+  return goJson<Bill>(`/api/bills/${id}/end-series`, { method: "DELETE" });
 }

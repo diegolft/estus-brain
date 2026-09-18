@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Estus Brain — frontend
 
-## Getting Started
+The Next.js app. It is the only thing the browser talks to: the Go API has no
+public listener, so every read and write goes through a server component,
+server action or route handler here, which is what makes the session design
+below possible.
 
-First, run the development server:
+## Running
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Copy `.env.example` to `.env.local` and adjust.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable  | Default                 | What it is                                                                                                                                                                           |
+| --------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `API_URL` | `http://localhost:8080` | Base URL of the Go API, read **server-side only**. Deliberately not `NEXT_PUBLIC_`: the address must never reach the browser bundle, and `lib/api.ts` imports `server-only` to enforce it. |
 
-## Learn More
+## Sessions
 
-To learn more about Next.js, take a look at the following resources:
+Signing in posts to the Go API's `POST /api/auth/login` from a server action.
+The token that comes back is stored in an **httpOnly** cookie named
+`estus_session` — httpOnly because the token is a bearer credential, and a
+cookie readable from `document.cookie` would turn any XSS anywhere in the app
+into a stolen session. No client-side code ever sees it.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `lib/session.ts` owns the cookie: reading, writing, clearing, and turning it
+  into the `Authorization: Bearer …` header.
+- `lib/serverFetch.ts` is the single fetch wrapper every `lib/` module and
+  route handler uses, so no call can reach Go without that header.
+- `proxy.ts` (Next 16's rename of `middleware.ts`) redirects anyone without
+  the cookie to `/login`, carrying where they were headed in `?next`. It only
+  checks that the cookie *exists* — validating it is the Go API's job, and
+  proxy code runs on every request, so it does no network I/O.

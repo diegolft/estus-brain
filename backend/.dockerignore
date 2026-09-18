@@ -1,0 +1,10 @@
+# Contexto de build: backend/. Impede que segredos e o acervo de documentos
+# locais entrem na imagem pelo `COPY . .`.
+.env
+.env.*
+!.env.example
+data/
+bin/
+.git
+.DS_Store
+*.log

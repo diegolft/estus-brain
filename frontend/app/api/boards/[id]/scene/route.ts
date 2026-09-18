@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
+import { API_URL } from "@/lib/serverFetch";
+import { authHeaders } from "@/lib/session";
 
 // The editor's autosave. The browser never talks to the Go API directly, and
 // a scene with pasted images is well past the server-action body limit, so
 // the save is proxied here as-is. The API validates and caps the size.
-const API_URL = process.env.API_URL ?? "http://localhost:8080";
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const res = await fetch(`${API_URL}/api/boards/${encodeURIComponent(id)}/scene`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: await request.text(),
     cache: "no-store",
   });

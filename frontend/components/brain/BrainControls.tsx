@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties }
 import Link from "next/link";
 import { IconClose, IconGear } from "@/components/icons";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { LogoutButton } from "@/components/LogoutButton";
 import { LOOK_LIST } from "./looks";
 import {
   SETTING_RANGE,
@@ -76,6 +77,13 @@ export function BrainControls() {
           <div className="brain-theme">
             <p className="brain-section-title">Tema</p>
             <ThemeToggle />
+          </div>
+
+          {/* The núcleo has no top bar of its own, so the way out lives in the
+              same panel as the other account-wide choices. */}
+          <div className="brain-theme">
+            <p className="brain-section-title">Sessão</p>
+            <LogoutButton label />
           </div>
 
           <p className="brain-section-title">Modelo do cérebro</p>

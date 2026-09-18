@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
+import { API_URL } from "@/lib/serverFetch";
+import { authHeaders } from "@/lib/session";
 
 // The chat screen talks to the assistant through here — the browser never
 // reaches the Go API. Bodies stream both ways, so an AI answer arrives as it
 // is written (server-sent events pass straight through).
-const API_URL = process.env.API_URL ?? "http://localhost:8080";
 
 async function proxy(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
@@ -15,6 +16,9 @@ async function proxy(request: NextRequest, { params }: { params: Promise<{ path:
       "Content-Type": request.headers.get("content-type") ?? "application/json",
       // A recording's format travels in its name.
       ...(request.headers.get("x-filename") ? { "X-Filename": request.headers.get("x-filename")! } : {}),
+      // The browser's session cookie became the Go API's bearer token here;
+      // the token itself never reaches the page.
+      ...(await authHeaders()),
     },
     body: hasBody ? request.body : undefined,
     // Required by fetch to stream a request body.

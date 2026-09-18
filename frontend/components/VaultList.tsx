@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { deleteVaultEntryAction } from "@/app/senhas/actions";
 import { VaultEntryForm } from "@/components/VaultEntryForm";
+import { Modal } from "@/components/Modal";
 import type { VaultEntry } from "@/lib/vault";
 import { IconSearch } from "./icons";
 
@@ -16,6 +17,13 @@ export function VaultList({ entries }: { entries: VaultEntry[] }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Which entry is waiting on the owner to prove who they are. Being logged
+  // in is not enough to read a stored password: the backend asks for the
+  // account password again on every reveal, so an unattended open session
+  // can't be walked up to and emptied.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmError, setConfirmError] = useState("");
   const timers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
   useEffect(() => {
@@ -42,18 +50,36 @@ export function VaultList({ entries }: { entries: VaultEntry[] }) {
     }, 1000);
   }
 
-  async function revelar(id: string) {
+  function closeConfirm() {
+    setConfirmingId(null);
+    setConfirmPassword("");
+    setConfirmError("");
+  }
+
+  async function revelar(id: string, password: string) {
     setErrors((e) => ({ ...e, [id]: "" }));
+    setConfirmError("");
     setRevealing(id);
     try {
-      const res = await fetch(`/api/vault/${id}/reveal`, { method: "POST" });
+      const res = await fetch(`/api/vault/${id}/reveal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      // 401 here is the re-confirmation failing, not the session: the modal
+      // stays open so the owner can try again without losing their place.
+      if (res.status === 401 || res.status === 403) {
+        setConfirmError("Senha incorreta.");
+        return;
+      }
       if (!res.ok) throw new Error("Não foi possível revelar a senha.");
-      const { password } = await res.json();
+      const { password: secret } = await res.json();
 
-      setRevealed((prev) => ({ ...prev, [id]: { password, secondsLeft: REVEAL_SECONDS } }));
+      setRevealed((prev) => ({ ...prev, [id]: { password: secret, secondsLeft: REVEAL_SECONDS } }));
       startCountdown(id);
+      closeConfirm();
     } catch (err) {
-      setErrors((e) => ({ ...e, [id]: friendlyMessage(err) }));
+      setConfirmError(friendlyMessage(err));
     } finally {
       setRevealing(null);
     }
@@ -76,6 +102,8 @@ export function VaultList({ entries }: { entries: VaultEntry[] }) {
   const visibleEntries = q
     ? entries.filter((e) => e.title.toLowerCase().includes(q) || e.username.toLowerCase().includes(q))
     : entries;
+
+  const confirmingEntry = entries.find((e) => e.id === confirmingId) ?? null;
 
   return (
     <div className="vault-list">
@@ -124,7 +152,11 @@ export function VaultList({ entries }: { entries: VaultEntry[] }) {
                     <button
                       className="btn-text"
                       type="button"
-                      onClick={() => revelar(entry.id)}
+                      onClick={() => {
+                        setConfirmPassword("");
+                        setConfirmError("");
+                        setConfirmingId(entry.id);
+                      }}
                       disabled={revealing === entry.id}
                     >
                       {revealing === entry.id ? "Revelando…" : "Revelar"}
@@ -146,6 +178,41 @@ export function VaultList({ entries }: { entries: VaultEntry[] }) {
           </div>
         );
       })}
+
+      <Modal open={confirmingEntry !== null} onClose={closeConfirm}>
+        <div className="panel">
+          <div className="panel-head">
+            <h2>Confirme sua senha</h2>
+          </div>
+          <form
+            className="form-grid"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (confirmingEntry) revelar(confirmingEntry.id, confirmPassword);
+            }}
+          >
+            <p className="empty-note">
+              Para ver a senha de <b>{confirmingEntry?.title}</b>, digite a senha da sua conta.
+            </p>
+            <div className="field">
+              <label htmlFor="vault-confirm">Senha da conta</label>
+              <input
+                id="vault-confirm"
+                type="password"
+                autoComplete="current-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <button className="btn-block" type="submit" disabled={revealing !== null || !confirmPassword}>
+              {revealing !== null ? "Revelando…" : "Revelar senha"}
+            </button>
+            {confirmError && <p className="form-error">{confirmError}</p>}
+          </form>
+        </div>
+      </Modal>
     </div>
   );
 }

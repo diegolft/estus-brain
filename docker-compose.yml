@@ -21,7 +21,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8080
-      DATABASE_URL: postgres://estus:estus@postgres:5432/estus_vault?sslmode=disable
+      DATABASE_URL: postgres://estus:***@postgres:5432/estus_vault?sslmode=disable
+      # Usuário inicial: no primeiro boot, se não houver nenhum usuário no
+      # banco, estas duas criam o dono da instância. Depois disso podem sair.
+      ESTUS_ADMIN_EMAIL: ${ESTUS_ADMIN_EMAIL:-}
+      ESTUS_ADMIN_PASSWORD: ${ESTUS_ADMIN_PASSWORD:-}
       # Cofre de senhas — deixe em branco para rodar sem esse módulo.
       VAULT_ENCRYPTION_KEY: ${VAULT_ENCRYPTION_KEY:-}
       # Agenda / Google Calendar — deixe em branco para rodar só localmente.
@@ -32,9 +36,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Só em loopback: em produção o único jeito de entrar é pelo Caddy, que
-    # fala com este serviço pela rede interna do compose, não pela porta
-    # publicada no host.
+    # Publicado só em loopback, e mesmo isso é conveniência de desenvolvimento
+    # (curl direto na API). Quem consome o backend de verdade é o frontend,
+    # pela rede interna do compose, em http://backend:8080. Em produção
+    # (Cubeship) o backend não recebe domínio público nenhum — ver
+    # deploy/cubeship.md.
     ports:
       - "127.0.0.1:8080:8080"
 
@@ -46,36 +52,12 @@ services:
       PORT: 3000
     depends_on:
       - backend
+    # O frontend é o único serviço que precisa ser alcançável de fora: é ele
+    # que serve a interface e, em produção, o único que recebe domínio
+    # público (o TLS fica com o Traefik do Cubeship). Localmente fica em
+    # 127.0.0.1 mesmo — a proteção real é o login/senha do app.
     ports:
       - "127.0.0.1:3000:3000"
 
-  # Borda mTLS: único serviço exposto publicamente (80/443). Emite o
-  # certificado HTTPS de verdade (Let's Encrypt, via DOMAIN) e só repassa a
-  # requisição para o frontend depois de validar um certificado de cliente
-  # assinado pela CA em deploy/mtls/ca/ca.crt — ver "Deploy com mTLS" no
-  # README. Fica atrás do profile "mtls": `docker compose up --build`
-  # sozinho (uso local) não sobe nem exige DOMAIN; produção usa
-  # `docker compose --profile mtls up -d --build`.
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    profiles: ["mtls"]
-    environment:
-      # Obrigatório só quando você de fato sobe este serviço (profile mtls) —
-      # ver "Deploy com mTLS" no README.
-      DOMAIN: ${DOMAIN:-}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./deploy/mtls/ca:/mtls:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - frontend
-
 volumes:
   estus_vault_pgdata:
-  caddy_data:
-  caddy_config:

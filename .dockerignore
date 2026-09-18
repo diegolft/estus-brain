@@ -1,0 +1,32 @@
+# Aplica-se aos builds com contexto na raiz do repo. Os dois Dockerfiles são
+# construídos com contexto na respectiva pasta (backend/ e frontend/), que
+# têm os seus próprios .dockerignore — este aqui cobre o caso de alguém
+# apontar o contexto para a raiz.
+
+.git
+.gitignore
+.DS_Store
+*.log
+
+# Segredos e dados locais: nunca entram em imagem.
+.env
+.env.*
+!.env.example
+backend/.env
+backend/data/
+backend/bin/
+
+# Artefatos de build que devem ser gerados dentro da imagem, não copiados
+# de fora (a máquina do dev pode ter node_modules de outra arquitetura).
+node_modules
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/public/excalidraw-assets
+
+# Coisas que não fazem parte de nenhuma das duas imagens.
+docs/
+scripts/
+apple-bridge/
+deploy/
+README.md

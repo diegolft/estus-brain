@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { API_URL } from "@/lib/serverFetch";
+import { authHeaders } from "@/lib/session";
 
 // Per the architecture rule, the browser never talks to the Go backend
 // directly — every request goes through the Next.js server. The Go
@@ -7,10 +9,12 @@ import { NextResponse } from "next/server";
 // it server-side with redirect: "manual", reads that Location header, and
 // hands the browser a redirect straight to Google. The browser never sees
 // the Go backend's address.
-const API_URL = process.env.API_URL ?? "http://localhost:8080";
 
 export async function GET(request: Request) {
-  const res = await fetch(`${API_URL}/api/google/oauth/start`, { redirect: "manual" });
+  const res = await fetch(`${API_URL}/api/google/oauth/start`, {
+    headers: await authHeaders(),
+    redirect: "manual",
+  });
 
   const location = res.headers.get("location");
   if (res.status >= 300 && res.status < 400 && location) {
