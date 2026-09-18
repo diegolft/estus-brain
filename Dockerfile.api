@@ -1,0 +1,28 @@
+# Contexto de build: a RAIZ do repo.
+#
+# backend/Dockerfile existe para o docker-compose, que chama `build: ./backend`
+# e portanto enxerga backend/ como contexto. O Cubeship constrói a partir do
+# repositório inteiro e só escolhe qual receita usar, então os COPY precisam
+# começar em backend/. São duas receitas para o mesmo binário de propósito:
+# fundir as duas obrigaria a mudar o compose, que hoje funciona.
+FROM golang:1.26-alpine AS build
+WORKDIR /src
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ ./
+RUN CGO_ENABLED=0 go build -o /bin/api ./cmd/api
+
+FROM alpine:3.20
+RUN adduser -D -u 10001 estus
+WORKDIR /app
+COPY --from=build /bin/api ./api
+# O binário aplica as migrations sozinho no boot, lendo o caminho relativo
+# "migrations" a partir do WORKDIR.
+COPY --from=build /src/migrations ./migrations
+# DOCUMENTS_DIR e ASSISTANT_DIR são relativos ao WORKDIR e o processo cria os
+# diretórios no primeiro uso — precisam pertencer ao usuário não-root, senão o
+# upload de documentos e o token do MCP falham com permission denied.
+RUN mkdir -p /app/data/documents /app/data/assistant && chown -R estus:estus /app/data
+USER estus
+EXPOSE 8080
+ENTRYPOINT ["./api"]
